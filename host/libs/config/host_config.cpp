@@ -16,34 +16,35 @@
 
 #include "host/libs/config/host_config.h"
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <iomanip>
 #include <sstream>
 
 #include <gflags/gflags.h>
 
-const char kVsocUserPrefix[] = "vsoc-";
-const char kDefaultUuidPrefix[] = "699acfc4-c8c4-11e7-882b-5065f31dc1";
+constexpr char kDefaultUuidPrefix[] = "699acfc4-c8c4-11e7-882b-5065f31dc1";
 
-int GetDefaultInstance() {
-  char* user = getenv("USER");
-  if (user && !memcmp(user, kVsocUserPrefix, sizeof(kVsocUserPrefix) - 1)) {
-    int temp = atoi(user + sizeof(kVsocUserPrefix) - 1);
+DEFINE_string(domain, vsoc::GetDefaultShmClientSocketPath(),
+              "Path to the ivshmem client socket");
+DEFINE_int32(instance, vsoc::GetDefaultInstance(),
+             "Instance number. Must be unique.");
+DEFINE_string(uuid, vsoc::GetPerInstanceDefault(kDefaultUuidPrefix).c_str(),
+              "UUID to use for the device. Random if not specified");
+
+int vsoc::GetDefaultInstance() {
+  static constexpr char kVsocUserPrefix[] = "vsoc-";
+  const char* user = std::getenv("USER");
+  if (user && !std::strncmp(user, kVsocUserPrefix,
+                            sizeof(kVsocUserPrefix) - 1)) {
+    int temp = std::atoi(user + sizeof(kVsocUserPrefix) - 1);
     if (temp > 0) {
       return temp;
     }
   }
   return 1;
 }
-
-DEFINE_string(domain, vsoc::GetDefaultShmClientSocketPath(),
-              "Path to the ivshmem client socket");
-DEFINE_int32(instance, GetDefaultInstance(),
-             "Instance number. Must be unique.");
-DEFINE_string(uuid, vsoc::GetPerInstanceDefault(kDefaultUuidPrefix).c_str(),
-              "UUID to use for the device. Random if not specified");
 
 std::string vsoc::GetPerInstanceDefault(const char* prefix) {
   std::ostringstream stream;
