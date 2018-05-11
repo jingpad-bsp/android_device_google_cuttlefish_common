@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2017 The Android Open Source Project
+// Copyright (C) 2018 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,32 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-cc_library_static {
-    name: "libcuttlefish_wifi",
-
+cc_library_host_static {
+    name: "libadb_connection_maintainer",
     srcs: [
-        "cmd.cc",
-        "netlink.cc",
-        "nl_client.cc",
-        "packet_switch.cc",
-        "virtual_wifi.cc",
-        "wr_client.cc",
-    ],
-    shared_libs: [
-        "vsoc_lib",
-        "libbase",
-        "libnl",
+        "adb_connection_maintainer.cpp",
     ],
     header_libs: [
         "cuttlefish_glog",
     ],
-    target: {
-        host: {
-            static_libs: [
-                "libcuttlefish_host_config",
-                "libgflags",
-            ],
-        }
-    },
-    defaults: ["cuttlefish_host_and_guest", "cuttlefish_native_isa"]
+    shared_libs: [
+        "libbase",
+    ],
+    defaults: ["cuttlefish_host_only"],
 }
