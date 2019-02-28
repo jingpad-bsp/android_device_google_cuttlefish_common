@@ -3236,7 +3236,7 @@ Return<void> RadioImpl_1_4::setDataProfile_1_4(int32_t /* serial */,
 }
 
 Return<void> RadioImpl_1_4::emergencyDial(int32_t serial,
-        const ::android::hardware::radio::V1_0::Dial& /* dialInfo */,
+        const ::android::hardware::radio::V1_0::Dial& dialInfo,
         hidl_bitfield<android::hardware::radio::V1_4::EmergencyServiceCategory> /* categories */,
         const hidl_vec<hidl_string>& /* urns */,
         ::android::hardware::radio::V1_4::EmergencyCallRouting /* routing */,
@@ -3244,8 +3244,42 @@ Return<void> RadioImpl_1_4::emergencyDial(int32_t serial,
 #if VDBG
     RLOGD("emergencyDial: serial %d", serial);
 #endif
-    // TODO actual implementation
-    dispatchVoid(serial, mSlotId, RIL_REQUEST_EMERGENCY_DIAL);
+
+    RequestInfo *pRI = android::addRequestToList(serial, mSlotId, RIL_REQUEST_EMERGENCY_DIAL);
+    if (pRI == NULL) {
+        return Void();
+    }
+    RIL_Dial dial = {};
+    RIL_UUS_Info uusInfo = {};
+    int32_t sizeOfDial = sizeof(dial);
+
+    if (!copyHidlStringToRil(&dial.address, dialInfo.address, pRI)) {
+        return Void();
+    }
+    dial.clir = (int) dialInfo.clir;
+
+    if (dialInfo.uusInfo.size() != 0) {
+        uusInfo.uusType = (RIL_UUS_Type) dialInfo.uusInfo[0].uusType;
+        uusInfo.uusDcs = (RIL_UUS_DCS) dialInfo.uusInfo[0].uusDcs;
+
+        if (dialInfo.uusInfo[0].uusData.size() == 0) {
+            uusInfo.uusData = NULL;
+            uusInfo.uusLength = 0;
+        } else {
+            if (!copyHidlStringToRil(&uusInfo.uusData, dialInfo.uusInfo[0].uusData, pRI)) {
+                memsetAndFreeStrings(1, dial.address);
+                return Void();
+            }
+            uusInfo.uusLength = dialInfo.uusInfo[0].uusData.size();
+        }
+
+        dial.uusInfo = &uusInfo;
+    }
+
+    CALL_ONREQUEST(RIL_REQUEST_EMERGENCY_DIAL, &dial, sizeOfDial, pRI, mSlotId);
+
+    memsetAndFreeStrings(2, dial.address, uusInfo.uusData);
+
     return Void();
 }
 
@@ -3311,11 +3345,11 @@ Return<void> RadioImpl_1_4::getAllowedCarriers_1_4(int32_t /* serial */) {
     return Void();
 }
 
-Return<void> RadioImpl_1_4::getSignalStrength_1_4(int32_t /* serial */) {
-    // TODO implement
+Return<void> RadioImpl_1_4::getSignalStrength_1_4(int32_t serial) {
 #if VDBG
-    RLOGE("[%04d]< %s", serial, "Method is not implemented");
+    RLOGD("getSignalStrength_1_4: serial %d", serial);
 #endif
+    dispatchVoid(serial, mSlotId, RIL_REQUEST_SIGNAL_STRENGTH);
     return Void();
 }
 
@@ -3423,7 +3457,8 @@ int responseInt(RadioResponseInfo& responseInfo, int serial, int responseType, R
 int radio_1_4::getIccCardStatusResponse(int slotId,
                                    int responseType, int serial, RIL_Errno e,
                                    void *response, size_t responseLen) {
-    if (radioService[slotId]->mRadioResponseV1_4 != NULL) {
+    if (radioService[slotId]->mRadioResponseV1_4 != NULL
+        || radioService[slotId]->mRadioResponse != NULL) {
         RadioResponseInfo responseInfo = {};
         populateResponseInfo(responseInfo, serial, responseType, e);
         CardStatus cardStatus = {CardState::ABSENT, PinState::UNKNOWN, -1, -1, -1, {}};
@@ -3460,14 +3495,20 @@ int radio_1_4::getIccCardStatusResponse(int slotId,
             }
         }
 
-        ::android::hardware::radio::V1_2::CardStatus cardStatusV1_2;
-        ::android::hardware::radio::V1_4::CardStatus cardStatusV1_4;
-        cardStatusV1_2.base = cardStatus;
-        cardStatusV1_2.physicalSlotId = -1;
-        cardStatusV1_4.base = cardStatusV1_2;
-        Return<void> retStatus = radioService[slotId]->mRadioResponseV1_4->
-                getIccCardStatusResponse_1_4(responseInfo, cardStatusV1_4);
-        radioService[slotId]->checkReturnStatus(retStatus);
+        if (radioService[slotId]->mRadioResponseV1_4 != NULL) {
+            ::android::hardware::radio::V1_2::CardStatus cardStatusV1_2;
+            ::android::hardware::radio::V1_4::CardStatus cardStatusV1_4;
+            cardStatusV1_2.base = cardStatus;
+            cardStatusV1_2.physicalSlotId = -1;
+            cardStatusV1_4.base = cardStatusV1_2;
+            Return<void> retStatus = radioService[slotId]->mRadioResponseV1_4->
+                    getIccCardStatusResponse_1_4(responseInfo, cardStatusV1_4);
+            radioService[slotId]->checkReturnStatus(retStatus);
+        } else {
+            Return<void> retStatus = radioService[slotId]->mRadioResponse->
+                    getIccCardStatusResponse(responseInfo, cardStatus);
+            radioService[slotId]->checkReturnStatus(retStatus);
+        }
     } else {
         RLOGE("getIccCardStatusResponse: radioService[%d]->mRadioResponse == NULL", slotId);
     }
@@ -3894,7 +3935,28 @@ int radio_1_4::getSignalStrengthResponse(int slotId,
     RLOGD("getSignalStrengthResponse: serial %d", serial);
 #endif
 
-    if (radioService[slotId]->mRadioResponse != NULL) {
+    if (radioService[slotId]->mRadioResponseV1_4 != NULL) {
+        RadioResponseInfo responseInfo = {};
+        populateResponseInfo(responseInfo, serial, responseType, e);
+        SignalStrength signalStrength = {};
+        if (response == NULL || responseLen != sizeof(RIL_SignalStrength_v10)) {
+            RLOGE("getSignalStrengthResponse: Invalid response");
+            if (e == RIL_E_SUCCESS) responseInfo.error = RadioError::INVALID_RESPONSE;
+        } else {
+            convertRilSignalStrengthToHal(response, responseLen, signalStrength);
+        }
+
+        ::android::hardware::radio::V1_4::SignalStrength signalStrength_1_4;
+        signalStrength_1_4.gsm = signalStrength.gw;
+        signalStrength_1_4.cdma = signalStrength.cdma;
+        signalStrength_1_4.evdo = signalStrength.evdo;
+        signalStrength_1_4.lte = signalStrength.lte;
+        //TODO: future implementation needs to fill tdScdma, wcdma and nr signal strength.
+
+        Return<void> retStatus = radioService[slotId]->mRadioResponseV1_4->
+                getSignalStrengthResponse_1_4(responseInfo, signalStrength_1_4);
+        radioService[slotId]->checkReturnStatus(retStatus);
+    } else if (radioService[slotId]->mRadioResponse != NULL) {
         RadioResponseInfo responseInfo = {};
         populateResponseInfo(responseInfo, serial, responseType, e);
         SignalStrength signalStrength = {};
@@ -7148,6 +7210,24 @@ int radio_1_4::stopNetworkScanResponse(int slotId, int responseType, int serial,
         RLOGE("stopNetworkScanResponse: radioService[%d]->mRadioResponseV1_4 == NULL", slotId);
     }
 
+    return 0;
+}
+
+int radio_1_4::emergencyDialResponse(int slotId, int responseType, int serial, RIL_Errno e,
+                                    void *response, size_t responseLen) {
+#if VDBG
+    RLOGD("emergencyDialResponse: serial %d", serial);
+#endif
+
+    if (radioService[slotId]->mRadioResponseV1_4 != NULL) {
+        RadioResponseInfo responseInfo = {};
+        populateResponseInfo(responseInfo, serial, responseType, e);
+        Return<void> retStatus
+                = radioService[slotId]->mRadioResponseV1_4->emergencyDialResponse(responseInfo);
+        radioService[slotId]->checkReturnStatus(retStatus);
+    } else {
+        RLOGE("emergencyDialResponse: radioService[%d]->mRadioResponseV1_4 == NULL", slotId);
+    }
     return 0;
 }
 
