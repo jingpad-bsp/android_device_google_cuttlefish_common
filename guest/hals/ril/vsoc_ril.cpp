@@ -70,6 +70,7 @@ static time_t gce_ril_start_time;
 static void pollSIMState(void* param);
 
 RIL_RadioState gRadioPowerState = RADIO_STATE_OFF;
+RIL_RadioAccessFamily default_access = RAF_LTE;
 
 struct DataCall {
   enum AllowedAuthenticationType { kNone = 0, kPap = 1, kChap = 2, kBoth = 3 };
@@ -2217,14 +2218,13 @@ static void request_set_preferred_network_type_bitmap(int /*request*/, void* dat
                                                RIL_Token t) {
   RIL_RadioAccessFamily desired_access = *(RIL_RadioAccessFamily*)(data);
 
-  ALOGV("Requesting modem technology change -> %d", desired_access);
+  ALOGV("Requesting modem technology change %d -> %d", default_access, desired_access);
 
   /** TODO future implementation: set modem type based on radio access family.
    * 1) find supported_technologies and desired_technologies
    * 2) return RIL_E_MODE_NOT_SUPPORTED error if not supported
-   * 3) set modem current type and radio technology according to the radio access family
    */
-  ALOGV("Modem technology skip set to %d.", desired_access);
+  default_access = desired_access;
   gce_ril_env->OnRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
   return;
 }
@@ -2232,11 +2232,7 @@ static void request_set_preferred_network_type_bitmap(int /*request*/, void* dat
 static void request_get_preferred_network_type_bitmap(int /*request*/, void* /*data*/,
                                                size_t /*datalen*/,
                                                RIL_Token t) {
-  ALOGV("Requesting modem radio access family, default -> %d", RAF_LTE);
-  /** TODO future implementation: return radio access family of current modem
-   * return a default value for now.
-   */
-  RIL_RadioAccessFamily default_access = RAF_LTE;
+  ALOGV("Requesting modem radio access family: %d", default_access);
   gce_ril_env->OnRequestComplete(
       t, RIL_E_SUCCESS, (RIL_RadioAccessFamily*)(&default_access), sizeof(default_access));
 }
@@ -2257,6 +2253,18 @@ static void request_set_sim_card_power(int /*request*/, void* /*data*/, size_t /
 
 static void request_get_modem_stack_status(int /*request*/, RIL_Token t) {
   ALOGV("Getting modem stack status - void");
+  gce_ril_env->OnRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+  return;
+}
+
+static void request_enable_modem(int /*request*/, RIL_Token t) {
+  ALOGV("Enabling modem - void");
+  gce_ril_env->OnRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+  return;
+}
+
+static void request_set_system_selection_channels(int /*request*/, RIL_Token t) {
+  ALOGV("request_set_system_selection_channels - void");
   gce_ril_env->OnRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
   return;
 }
@@ -2500,6 +2508,9 @@ static void gce_ril_on_request(int request, void* data, size_t datalen,
     case RIL_REQUEST_GET_MODEM_STACK_STATUS:
       request_get_modem_stack_status(request, t);
       break;
+    case RIL_REQUEST_ENABLE_MODEM:
+      request_enable_modem(request, t);
+      break;
     case RIL_REQUEST_EMERGENCY_DIAL:
       request_emergency_dial(request, data, datalen, t);
       break;
@@ -2511,6 +2522,9 @@ static void gce_ril_on_request(int request, void* data, size_t datalen,
       break;
     case RIL_REQUEST_SET_PREFERRED_NETWORK_TYPE_BITMAP:
       request_set_preferred_network_type_bitmap(request, data, datalen, t);
+      break;
+    case RIL_REQUEST_SET_SYSTEM_SELECTION_CHANNELS:
+      request_set_system_selection_channels(request, t);
       break;
 #endif
     case RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING:
