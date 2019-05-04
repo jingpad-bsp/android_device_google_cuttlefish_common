@@ -23,7 +23,6 @@
 
 #include "common/libs/fs/shared_fd.h"
 #include "common/libs/fs/shared_select.h"
-//#include "host/libs/monitor/kernel_log_client.h"
 
 namespace monitor {
 
@@ -33,6 +32,7 @@ enum BootEvent : int32_t {
   BootFailed = 2,
   WifiNetworkConnected = 3,
   MobileNetworkConnected = 4,
+  AdbdStarted = 5,
 };
 
 enum class SubscriptionAction {
